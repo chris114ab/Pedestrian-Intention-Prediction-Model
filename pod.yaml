@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: helloworld
+  namespace: msc24chris
+spec:
+  containers:                            
+  - name: training
+    image: chris114abraham/masters:training
+    imagePullPolicy: IfNotPresent
+    command:
+      - 'echo'
+    args:
+      - 'hello world' 
+    resources: {}
+  dnsPolicy: ClusterFirst
+  restartPolicy: Never
