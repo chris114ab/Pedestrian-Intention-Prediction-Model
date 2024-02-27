@@ -1,4 +1,5 @@
 import torch
+import sys
 from torch.utils.data import Dataset,DataLoader,random_split
 from sklearn.metrics import f1_score
 from transformers import AutoImageProcessor, TimesformerForVideoClassification
@@ -62,12 +63,15 @@ def unload(input):
   return videos
 
 def eval_func(training_model,threshold,validate_loader,processor):
-    val_video,val_label =unload(next(iter(validate_loader)))
+    batch = next(iter(validate_loader))
+    val_video =unload(batch["combine"])
     val_input = processor(val_video, return_tensors="pt")
     output = training_model(**val_input)
     predicted_label = torch.sigmoid(output.logits) > threshold
-    val_label_np = val_label.numpy().astype(int)
+    val_label_np = batch["label"].numpy()
     predicted_label_np = predicted_label.numpy().astype(int)
+    print(predicted_label_np)
+    print(val_label_np)
     f1 = f1_score(val_label_np, predicted_label_np)
     print(f1)
     return f1
@@ -98,7 +102,7 @@ class PIE_dataset(Dataset):
       pose_bb_data = person_bbox_data(ped_pose,self.bbox[idx])
       label = any(i for i in self.labels[idx])
       combine = norm_combine(self.data[idx],self.ped_frames[idx],pose_bb_data)
-      return {"video":list(self.data[idx]), "label":label, "bbox":self.bbox[idx], "data":pose_bb_data, "combine":list(combine)}
+      return {"video":list(self.data[idx]), "label":int(label), "bbox":self.bbox[idx], "data":pose_bb_data, "combine":list(combine)}
 
 
 
@@ -111,12 +115,13 @@ label_path = str(os.getcwd()) + "/data/111_label.pickle"
 ped_path = str(os.getcwd()) + "/data/ped_frame.pickle"
 bb_path = str(os.getcwd()) + "/data/bounding_boxes.pickle"
 
-train_test_split = [100,11]
+train_test_split = [80,31]
 # try different epochs
 # tensorboard to visualise validation loss
 # 80/20 split for 
 threshold = 0.5
 output_path = "100_sample_timesformer"
+num_epochs=int(sys.argv[1])
 ##############################
 
 print(os.getenv('TFTEST_ENV_VAR'))
@@ -138,9 +143,8 @@ train_dataset, test_dataset = random_split(full_dataset, train_test_split)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 validate_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
-
 scores=[]
-num_epochs=1
+
 counter = 1
 for epoch in range(num_epochs):
     print("epoch")
@@ -150,12 +154,13 @@ for epoch in range(num_epochs):
         inputs = processor(list(unload(batch["combine"])), return_tensors="pt")
         optimizer.zero_grad()
         outputs = model(**inputs)
+
         loss = torch.nn.functional.cross_entropy(outputs.logits, labels)
         loss.backward()
         optimizer.step()
         print(counter)
         counter+=1
-    scores.append(eval_func(model))
+    scores.append(eval_func(model,threshold,validate_loader,processor))
 
 model.save_pretrained(output_path)
 # write scores to file
