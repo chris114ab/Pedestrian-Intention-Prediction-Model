@@ -1,4 +1,5 @@
 import torch
+import sys
 from torch.utils.data import Dataset,DataLoader,random_split
 from sklearn.metrics import f1_score
 from transformers import AutoImageProcessor, TimesformerForVideoClassification
@@ -62,92 +63,75 @@ def unload(input):
   return videos
 
 def eval_func(training_model,threshold,validate_loader,processor):
-    val_video,val_label =unload(next(iter(validate_loader)))
+    batch = next(iter(validate_loader))
+    val_video =unload(batch["data"])
     val_input = processor(val_video, return_tensors="pt")
     output = training_model(**val_input)
     predicted_label = torch.sigmoid(output.logits) > threshold
-    val_label_np = val_label.numpy().astype(int)
+    val_label_np = batch["label"].numpy()
     predicted_label_np = predicted_label.numpy().astype(int)
     f1 = f1_score(val_label_np, predicted_label_np)
     print(f1)
     return f1
 
 class PIE_dataset(Dataset):
-    def __init__(self, data_path, label_path, ped_path=None, bb_path=None, transform=None):
+    def __init__(self, data_path, transform=None):
         self.transform = None
-        with open(data_path, "rb") as file:
-          # Load the data from the pickle file
-          self.data = pickle.load(file)
-        with open(label_path, "rb") as file:
-          # Load the data from the pickle file
-          self.labels = pickle.load(file)
-        if ped_path:
-          with open(ped_path, "rb") as file:
-            # Load the data from the pickle file
-            self.ped_frames = pickle.load(file)
-        if bb_path:
-          with open(bb_path, "rb") as file:
-            # Load the data from the pickle file
-            self.bbox = pickle.load(file)
+        with open(data_path, 'rb') as f:
+            self.data = pickle.load(f)
+        self.data = self.data
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data["labels"])
 
     def __getitem__(self, idx):
-      ped_pose = detect(self.ped_frames[idx])
-      pose_bb_data = person_bbox_data(ped_pose,self.bbox[idx])
-      label = any(i for i in self.labels[idx])
-      combine = norm_combine(self.data[idx],self.ped_frames[idx],pose_bb_data)
-      return {"video":list(self.data[idx]), "label":label, "bbox":self.bbox[idx], "data":pose_bb_data, "combine":list(combine)}
+      pose_bb_data = person_bbox_data(self.data["ped_pose"][idx],self.data["bbox"][idx])
+      label = any(i for i in self.data["labels"][idx])
+      combine = norm_combine(self.data["frames"][idx],self.data["ped_frames"][idx],pose_bb_data)
+      return {"data":list(combine), "label":label}
 
 
 
-
+print("started")
 ##############################
-batch_size = 5
 model_name = "facebook/timesformer-base-finetuned-k400"
-frame_path = str(os.getcwd()) + "/data/111_frames.pickle"
-label_path = str(os.getcwd()) + "/data/111_label.pickle"
-ped_path = str(os.getcwd()) + "/data/ped_frame.pickle"
-bb_path = str(os.getcwd()) + "/data/bounding_boxes.pickle"
-
-train_test_split = [100,11]
+train_test_split = [80,31]
 # try different epochs
 # tensorboard to visualise validation loss
 # 80/20 split for 
 threshold = 0.5
-output_path = "100_sample_timesformer"
+output_path = "/nfs/finetuned_model"
+batch_size = int(sys.argv[1])
+num_epochs=int(sys.argv[2])
 ##############################
 
-print(os.getenv('TFTEST_ENV_VAR'))
+# print(os.getenv('TFTEST_ENV_VAR'))
 model = TimesformerForVideoClassification.from_pretrained(model_name)
 
-# change this for abaltion study
-# Machine learning model
-# SVM
-# Random Forest
+# # change this for abaltion study
+# # Machine learning model
+# # SVM
+# # Random Forest
 model.classifier = torch.nn.Linear(model.classifier.in_features, 1)
-
+print("made model")
 
 processor = AutoImageProcessor.from_pretrained(model_name)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
-full_dataset = PIE_dataset(frame_path,label_path,ped_path=ped_path,bb_path=bb_path,transform=None)
-train_dataset, test_dataset = random_split(full_dataset, train_test_split)
+train_dataset = PIE_dataset("data/train_data.pickle",transform=None)
 
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-validate_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-
+# validate_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+print("loaded data")
 
 scores=[]
-num_epochs=1
 counter = 1
 for epoch in range(num_epochs):
     print("epoch")
     for batch in train_loader:
         # videos,labels = unload(batch)
         labels = torch.tensor([[x] for x in batch["label"]]).to(torch.float32)
-        inputs = processor(list(unload(batch["combine"])), return_tensors="pt")
+        inputs = processor(list(unload(batch["data"])), return_tensors="pt")
         optimizer.zero_grad()
         outputs = model(**inputs)
         loss = torch.nn.functional.cross_entropy(outputs.logits, labels)
@@ -155,11 +139,11 @@ for epoch in range(num_epochs):
         optimizer.step()
         print(counter)
         counter+=1
-    scores.append(eval_func(model))
+    scores.append(eval_func(model,threshold,train_loader,processor))
 
 model.save_pretrained(output_path)
 # write scores to file
-file = open("scores.txt", "w")
+file = open("/nfs/scores.txt", "w")
 file.write(str(scores))
 file.close()
 
