@@ -14,7 +14,7 @@ COPY movenet_thunder.tflite /tmp
 
 # ADD data /tmp/data
 # ENV can be used to set environment variables
-ENV TFTEST_ENV_VAR 12345
+ENV TRANSFORMERS_CACHE /nfs
 # RUN is used to execute a command in the image
 
 # WORKDIR configures the current working directory that 
@@ -33,4 +33,4 @@ RUN pip install scikit-learn
 
 
 # CMD defines the command that containers will run when # created from this image
-CMD ["python", "main.py", "2"]
+# CMD ["python", "main.py", "2"]

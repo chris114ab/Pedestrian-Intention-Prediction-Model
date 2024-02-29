@@ -70,8 +70,6 @@ def eval_func(training_model,threshold,validate_loader,processor):
     predicted_label = torch.sigmoid(output.logits) > threshold
     val_label_np = batch["label"].numpy()
     predicted_label_np = predicted_label.numpy().astype(int)
-    print(predicted_label_np)
-    print(val_label_np)
     f1 = f1_score(val_label_np, predicted_label_np)
     print(f1)
     return f1
@@ -94,25 +92,20 @@ class PIE_dataset(Dataset):
 
 
 
-
+print("started")
 ##############################
-batch_size = 5
 model_name = "facebook/timesformer-base-finetuned-k400"
-frame_path = str(os.getcwd()) + "/data/111_frames.pickle"
-label_path = str(os.getcwd()) + "/data/111_label.pickle"
-ped_path = str(os.getcwd()) + "/data/ped_frame.pickle"
-bb_path = str(os.getcwd()) + "/data/bounding_boxes.pickle"
-
 train_test_split = [80,31]
 # try different epochs
 # tensorboard to visualise validation loss
 # 80/20 split for 
 threshold = 0.5
-output_path = "100_sample_timesformer"
-num_epochs=int(sys.argv[1])
+output_path = "/nfs/finetuned_model"
+batch_size = int(sys.argv[1])
+num_epochs=int(sys.argv[2])
 ##############################
 
-print(os.getenv('TFTEST_ENV_VAR'))
+# print(os.getenv('TFTEST_ENV_VAR'))
 model = TimesformerForVideoClassification.from_pretrained(model_name)
 
 # # change this for abaltion study
@@ -120,7 +113,7 @@ model = TimesformerForVideoClassification.from_pretrained(model_name)
 # # SVM
 # # Random Forest
 model.classifier = torch.nn.Linear(model.classifier.in_features, 1)
-
+print("made model")
 
 processor = AutoImageProcessor.from_pretrained(model_name)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
@@ -129,13 +122,9 @@ train_dataset = PIE_dataset("data/train_data.pickle",transform=None)
 
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 # validate_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-
-# batch = next(iter(train_loader))
-# unloaded = unload(batch["data"])
-# print(len(unloaded))
+print("loaded data")
 
 scores=[]
-print(len(train_dataset))
 counter = 1
 for epoch in range(num_epochs):
     print("epoch")
@@ -145,7 +134,6 @@ for epoch in range(num_epochs):
         inputs = processor(list(unload(batch["data"])), return_tensors="pt")
         optimizer.zero_grad()
         outputs = model(**inputs)
-        print(labels)
         loss = torch.nn.functional.cross_entropy(outputs.logits, labels)
         loss.backward()
         optimizer.step()
@@ -155,7 +143,7 @@ for epoch in range(num_epochs):
 
 model.save_pretrained(output_path)
 # write scores to file
-file = open("scores.txt", "w")
+file = open("/nfs/scores.txt", "w")
 file.write(str(scores))
 file.close()
 
