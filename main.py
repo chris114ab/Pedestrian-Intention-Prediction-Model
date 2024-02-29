@@ -95,14 +95,13 @@ class PIE_dataset(Dataset):
 print("started")
 ##############################
 model_name = "facebook/timesformer-base-finetuned-k400"
-train_test_split = [80,31]
 # try different epochs
 # tensorboard to visualise validation loss
 # 80/20 split for 
 threshold = 0.5
-output_path = "/nfs/finetuned_model"
 batch_size = int(sys.argv[1])
 num_epochs=int(sys.argv[2])
+output_path = "/nfs/" + sys.argv[3]
 ##############################
 
 # print(os.getenv('TFTEST_ENV_VAR'))
@@ -143,7 +142,7 @@ for epoch in range(num_epochs):
 
 model.save_pretrained(output_path)
 # write scores to file
-file = open("/nfs/scores.txt", "w")
+file = open(output_path + "/training_scores.txt", "w")
 file.write(str(scores))
 file.close()
 
