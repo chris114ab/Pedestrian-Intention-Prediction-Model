@@ -10,21 +10,6 @@ import cv2
 import pickle
 from PIL import Image
 import numpy as np
-from ml import Movenet
-movenet = Movenet('movenet_thunder')
-
-def detect(ped_frames, inference_count=3):
-  ped_pose = []
-  for input_tensor in ped_frames:
-    # Detect pose using the full input image
-    movenet.detect(input_tensor, reset_crop_region=True)
-    # Repeatedly using previous detection result to identify the region of
-    # interest and only croping that region to improve detection accuracy
-    for _ in range(inference_count - 1):
-      person = movenet.detect(input_tensor,
-                              reset_crop_region=False)
-    ped_pose.append(person)
-  return ped_pose
 
 # normalise and combien thre stream into one
 def norm_combine(data1,data2,data3):
@@ -91,7 +76,6 @@ class PIE_dataset(Dataset):
       return {"data":list(combine), "label":label}
 
 
-
 print("started")
 ##############################
 model_name = "facebook/timesformer-base-finetuned-k400"
@@ -111,6 +95,7 @@ model = TimesformerForVideoClassification.from_pretrained(model_name)
 # # Machine learning model
 # # SVM
 # # Random Forest
+print(model.classifier.in_features)
 model.classifier = torch.nn.Linear(model.classifier.in_features, 1)
 print("made model")
 
@@ -123,28 +108,28 @@ train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 # validate_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 print("loaded data")
 
-scores=[]
-counter = 1
-for epoch in range(num_epochs):
-    print("epoch")
-    for batch in train_loader:
-        # videos,labels = unload(batch)
-        labels = torch.tensor([[x] for x in batch["label"]]).to(torch.float32)
-        inputs = processor(list(unload(batch["data"])), return_tensors="pt")
-        optimizer.zero_grad()
-        outputs = model(**inputs)
-        loss = torch.nn.functional.cross_entropy(outputs.logits, labels)
-        loss.backward()
-        optimizer.step()
-        print(counter)
-        counter+=1
-    scores.append(eval_func(model,threshold,train_loader,processor))
+# scores=[]
+# counter = 1
+# for epoch in range(num_epochs):
+#     print("epoch")
+#     for batch in train_loader:
+#         # videos,labels = unload(batch)
+#         labels = torch.tensor([[x] for x in batch["label"]]).to(torch.float32)
+#         inputs = processor(list(unload(batch["data"])), return_tensors="pt")
+#         optimizer.zero_grad()
+#         outputs = model(**inputs)
+#         loss = torch.nn.functional.cross_entropy(outputs.logits, labels)
+#         loss.backward()
+#         optimizer.step()
+#         print(counter)
+#         counter+=1
+#     scores.append(eval_func(model,threshold,train_loader,processor))
 
-model.save_pretrained(output_path)
-# write scores to file
-file = open(output_path + "/training_scores.txt", "w")
-file.write(str(scores))
-file.close()
+# model.save_pretrained(output_path)
+# # write scores to file
+# file = open(output_path + "/training_scores.txt", "w")
+# file.write(str(scores))
+# file.close()
 
 # AUC
 # f1 score
