@@ -55,16 +55,18 @@ def eval_func(training_model,threshold,validate_loader,processor):
     predicted_label = torch.sigmoid(output.logits) > threshold
     val_label_np = batch["label"].numpy()
     predicted_label_np = predicted_label.numpy().astype(int)
+    loss = torch.nn.functional.cross_entropy(outputs.logits, labels)
+    print(loss)
     f1 = f1_score(val_label_np, predicted_label_np)
     print(f1)
-    return f1
+    return f1,loss
 
 class PIE_dataset(Dataset):
     def __init__(self, data_path, transform=None):
         self.transform = None
         with open(data_path, 'rb') as f:
-            self.data = pickle.load(f)
-        self.data = self.data
+            data = pickle.load(f)
+        self.data = data
 
     def __len__(self):
         return len(self.data["labels"])
@@ -102,34 +104,46 @@ print("made model")
 processor = AutoImageProcessor.from_pretrained(model_name)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
-train_dataset = PIE_dataset("data/train_data.pickle",transform=None)
+train_dataset = PIE_dataset("data/test_data.pickle",transform=None)
 
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 # validate_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 print("loaded data")
 
-# scores=[]
-# counter = 1
-# for epoch in range(num_epochs):
-#     print("epoch")
-#     for batch in train_loader:
-#         # videos,labels = unload(batch)
-#         labels = torch.tensor([[x] for x in batch["label"]]).to(torch.float32)
-#         inputs = processor(list(unload(batch["data"])), return_tensors="pt")
-#         optimizer.zero_grad()
-#         outputs = model(**inputs)
-#         loss = torch.nn.functional.cross_entropy(outputs.logits, labels)
-#         loss.backward()
-#         optimizer.step()
-#         print(counter)
-#         counter+=1
-#     scores.append(eval_func(model,threshold,train_loader,processor))
+mse = nn.MSELoss()
 
-# model.save_pretrained(output_path)
-# # write scores to file
-# file = open(output_path + "/training_scores.txt", "w")
-# file.write(str(scores))
-# file.close()
+scores=[]
+counter = 1
+for epoch in range(num_epochs):
+    print("epoch")
+    for batch in train_loader:
+        # videos,labels = unload(batch)
+        labels = torch.tensor([[x] for x in batch["label"]]).to(torch.float32)
+        inputs = processor(list(unload(batch["data"])), return_tensors="pt")
+        optimizer.zero_grad()
+        outputs = model(**inputs)
+        mse_loss = mse(outputs.logits,labels)
+        loss = torch.nn.functional.cross_entropy(outputs.logits, labels)
+        loss.backward()
+        optimizer.step()
+        print(counter)
+        counter+=1
+    scores.append(eval_func(model,threshold,train_loader,processor))
+
+if output_path:
+  model.save_pretrained(output_path)
+  # write scores to file
+  file = open(output_path + "/training_scores.txt", "w")
+  file.write(str(scores))
+  file.close()
+
+
+test_dataset = PIE_dataset("data/test_data.pickle",transform=None)
+model.eval()
+
+
+
+
 
 # AUC
 # f1 score

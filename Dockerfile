@@ -4,13 +4,11 @@ FROM tensorflow/tensorflow:2.15.0
 # to a location inside the image
 
 # Update package lists and install libgl1-mesa-glx
-COPY main.py /tmp
-COPY data /tmp/data
-COPY ml /tmp/ml
-COPY tracker /tmp/tracker
-COPY utils.py /tmp
+COPY training.py /tmp
 COPY data.py /tmp
-COPY movenet_thunder.tflite /tmp
+
+# COPY data /tmp/data
+
 
 # ADD data /tmp/data
 # ENV can be used to set environment variables
@@ -23,6 +21,7 @@ ENV TRANSFORMERS_CACHE /nfs
 # it to the same location so we can run the script with 
 # no path prefix
 WORKDIR /tmp
+
 RUN python3 -m pip install --upgrade pip
 RUN pip3 install wheel
 RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
