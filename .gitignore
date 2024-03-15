@@ -1,3 +1,4 @@
 data/
 discard/
 model_outputs/
+*.pickle

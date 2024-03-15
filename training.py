@@ -31,7 +31,7 @@ def evaluate_model(model, threshold, data_loader):
     recall = recall_score(true_labels, pred_labels)
     roc_auc = roc_auc_score(true_labels, pred_probs)
 
-    return f1, accuracy, precision, recall, roc_auc
+    return f1, accuracy, precision, recall, roc_auc, pred_labels, true_labels
 
 
 def custom_transforms(data):
@@ -58,11 +58,11 @@ class PIE_dataset(Dataset):
         return len(self.data["labels"])
 
     def __getitem__(self, idx):
-      pose_bb_data = person_bbox_data(self.data["ped_pose"][idx],self.data["bbox"][idx])
+      # pose_bb_data = person_bbox_data(self.data["ped_pose"][idx],self.data["bbox"][idx])
       label = any(i for i in self.data["labels"][idx])
-      combine = norm_combine(self.data["frames"][idx],self.data["ped_frames"][idx],pose_bb_data)
-      data = self.transform(combine)
-      return {"data": list(data), "label": label}
+      # combine = norm_combine(self.data["frames"][idx],self.data["ped_frames"][idx],pose_bb_data)
+    #   data = self.transform(combine)
+      return {"data": list(self.data["frames"][idx]), "label": label}
 
 # normalise and combine the stream into one
 def norm_combine(data1,data2,data3):
@@ -100,26 +100,7 @@ def unload(input):
     ]
   return videos
 
-# Define model evaluation function
-def eval_func(training_model, threshold, validate_loader, processor):
-    training_model.eval()
-    f1_scores = []
-    losses = []
-    with torch.no_grad():
-        for batch in validate_loader:
-            val_video = unload(batch["data"])
-            val_input = processor(val_video, return_tensors="pt")
-            output = training_model(**val_input)
-            predicted_label = torch.sigmoid(output.logits) > threshold
-            val_label_np = batch["label"].numpy()
-            predicted_label_np = predicted_label.numpy().astype(int)
-            f1 = f1_score(val_label_np, predicted_label_np)
-            f1_scores.append(f1)
-            loss = nn.BCELoss()(torch.flatten(torch.sigmoid(output.logits)), batch["label"].float())
-            losses.append(loss.item())
-    avg_f1 = np.mean(f1_scores)
-    avg_loss = np.mean(losses)
-    return avg_f1, avg_loss
+
 
 # Define training parameters
 model_name = "facebook/timesformer-base-finetuned-k400"
@@ -161,7 +142,7 @@ for epoch in range(num_epochs):
         true_labels.extend(batch["label"])
         loss.backward()
         optimizer.step()
-
+    
     # Evaluate the model after each epoch
     f1 = f1_score(true_labels, pred_probs)
     acc_score = accuracy_score(true_labels, pred_probs)
@@ -175,11 +156,13 @@ for epoch in range(num_epochs):
 # Save the trained model
 if output_path:
     test_score = evaluate_model(model, threshold, test_loader)
+    test = f"Final : F1 Score: {test_score[0]}, Accuracy: {test_score[1]}, Precision: {test_score[2]}, Recall: {test_score[3]}, ROC AUC: {test_score[4]}"
+    print(test)
     model.save_pretrained(output_path)
     # Write scores to file
-    with open(output_path + "/training_scores.txt", "w") as file:
+    with open(output_path + "/scores.txt", "w") as file:
         file.write(str(scores))
+        file.write(str(test))
+        file.write(str(test_score[5]) + "\n")
+        file.write(str(test_score[6]) + "\n")
 
-    with open(output_path + "/test_scores.pickle", "wb") as file:
-        file.write(str(test_score))
-# test the model

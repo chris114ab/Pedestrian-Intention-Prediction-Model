@@ -1,19 +1,19 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: training
+  name: cpe-model
   namespace: msc24chrisproject
 spec:
   backoffLimit: 0
   template:        
     metadata:
-      name: trainingv4
+      name: cpe-model
     spec:
       containers:
       - name: training-container  
-        image: chris114abraham/masters:new-train
+        image: chris114abraham/masters:combine
         imagePullPolicy: Always
-        command: ["python", "training.py", "10","10","new_data"]
+        command: ["python", "combined_model.py", "con-ped-ext","20","20","0.00025","cpe_model"]
         resources:
           requests:
             cpu: "5000m" 

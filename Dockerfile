@@ -4,7 +4,7 @@ FROM tensorflow/tensorflow:2.15.0
 # to a location inside the image
 
 # Update package lists and install libgl1-mesa-glx
-COPY training.py /tmp
+COPY combined_model.py /tmp
 COPY data.py /tmp
 
 # COPY data /tmp/data
