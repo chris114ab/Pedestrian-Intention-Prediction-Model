@@ -12,17 +12,20 @@ import pickle
 from PIL import Image
 from sklearn.ensemble import RandomForestClassifier
 from sklearn import svm
+import cv2
+
+import matplotlib.pyplot as plt
+import seaborn as sns; sns.set()  # For nice heatmap aesthetics
 
 
-def evaluate_model(model, data_loader):
-    threshold = 0.5
+def evaluate_model_linear(model, threshold, data_loader):
     model.eval()
     true_labels = []
     pred_probs = []
     loss = []
     with torch.no_grad():
         for batch in data_loader:
-            output = model(batch)
+            _,output = model(batch)
             loss.append(nn.BCEWithLogitsLoss()(output, batch["label"].float().unsqueeze(1)))
             pred_probs.extend(torch.sigmoid(output).detach().cpu().numpy())
             true_labels.extend(batch["label"].detach().numpy())
@@ -36,6 +39,27 @@ def evaluate_model(model, data_loader):
     recall = recall_score(true_labels, pred_labels)
     roc_auc = roc_auc_score(true_labels, pred_probs)
     return f1, accuracy, precision, recall, roc_auc, loss, pred_probs, true_labels
+
+
+
+def evaluate_model(model, data_loader,classifier):
+    model.eval()
+    true_labels = []
+    pred_labels = []
+    c=0
+    with torch.no_grad():
+        for batch in data_loader:
+            features,_ = model(batch)
+            output = classifier.predict(features)
+            pred_labels.extend(output)
+            true_labels.extend(batch["label"].detach().numpy())
+
+    true_labels = np.array(true_labels)
+    f1 = f1_score(true_labels, pred_labels)
+    accuracy = accuracy_score(true_labels, pred_labels)
+    precision = precision_score(true_labels, pred_labels)
+    recall = recall_score(true_labels, pred_labels)
+    return f1, accuracy, precision, recall, pred_labels, true_labels
 
 def unload(input):
   length = len(input[0])
@@ -81,7 +105,7 @@ class PIE_dataset(Dataset):
         with open(data_path, 'rb') as f:
             self.data = pickle.load(f)
         self.data = self.data
-        self.transform =  transforms.RandomApply([custom_transforms], p=0.5)
+        # self.transform =  transforms.RandomApply([custom_transforms], p=0.5)
 
     def __len__(self):
         return len(self.data["labels"])
@@ -90,7 +114,9 @@ class PIE_dataset(Dataset):
       pose = unload_person(self.data["ped_pose"][idx])
       bbox = self.data["bbox"][idx].flatten()
       label = self.data["labels"][idx]
-      frames,ped_frames = self.transform([self.data["frames"][idx], self.data["ped_frames"][idx]])
+      frames =  self.data["frames"][idx]
+      ped_frames = self.data["ped_frames"][idx]
+    #   frames,ped_frames = self.transform([self.data["frames"][idx], self.data["ped_frames"][idx]])
       return {"context": list(frames), "label": label, "ped_frames": list(ped_frames), "pose": pose ,"bbox":bbox}
 
 class Identity(nn.Module):
@@ -109,10 +135,12 @@ class CombinedTimesformer(nn.Module):
         if context:
             feature_count +=768
             self.context_model = TimesformerForVideoClassification.from_pretrained(model_name)
+            self.context_model.config.output_attentions = True
             self.context_model.classifier = Identity()
         if ped_frames:
             feature_count +=768
             self.ped_model = TimesformerForVideoClassification.from_pretrained(model_name)
+            self.ped_model.config.output_attentions = True
             self.ped_model.classifier = Identity()
         if extra:
             feature_count += 200
@@ -133,7 +161,10 @@ class CombinedTimesformer(nn.Module):
             feature_vector.append(self.context_model(**context).logits)
            
         if hasattr(self, 'ped_model'):
-            feature_vector.append(self.ped_model(**ped_frames).logits)
+            ped = self.ped_model(**ped_frames)
+            print(len(ped.attentions))
+            print(ped.attentions[0].shape)
+            feature_vector.append(ped.logits)
         if hasattr(self, 'extra_model'):
             extras = torch.cat((x["pose"], x["bbox"]),dim=1).float()
             feature_vector.append(self.extra_model(extras))
@@ -142,52 +173,82 @@ class CombinedTimesformer(nn.Module):
         combined_feature_vector = torch.cat(feature_vector, dim=1)
         combined_feature_vector = self.dropout(combined_feature_vector)
         output = self.classifier(combined_feature_vector)
-        return output
+        return output, ped.attentions[0]
 
-context, ped_frames, extra = True, True, True
-batch_size = 10
+context, ped_frames, extra = True, False, False
+
+batch_size = 1
+
+
 model = CombinedTimesformer(context, ped_frames, extra)
-with(open("/nfs/cpe-21/model.pt", 'rb')) as f:
-    model.load_state_dict(torch.load(f))
 
-paths= ["0.5","1","2"]
-for tte in paths:
-    data_path = "/nfs/"+ tte+"s_data.pickle"
-    test_data_path = "/nfs/"+ tte+"s_test.pickle"
-    dataset = PIE_dataset(data_path)
-    test_dataset = PIE_dataset(test_data_path)
-    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-    predictions = []
-    labels = []
-    c = 0
-    linear = []
-    print(tte)
-    data_score = evaluate_model(model, data_loader)
-    data = f"Final : F1 Score: {data_score[0]}, Accuracy: {data_score[1]}, Precision: {data_score[2]}, Recall: {data_score[3]}, ROC AUC: {data_score[4]} Average Loss: {data_score[5]}"
-    print(data)
-    print(data_score[6])
-    print(data_score[7])
-    test_score = evaluate_model(model, test_loader)
-    test = f"Final : F1 Score: {test_score[0]}, Accuracy: {test_score[1]}, Precision: {test_score[2]}, Recall: {test_score[3]}, ROC AUC: {test_score[4]} Average Loss: {test_score[5]}"
-    print(test)
-
-data_path = "/nfs/data.pickle"
-test_data_path = "/nfs/unseen_data.pickle"
+data_path = "unseen_data.pickle"
+test_data_path = "data/0.5s_data.pickle"
 dataset = PIE_dataset(data_path)
 test_dataset = PIE_dataset(test_data_path)
-data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-predictions = []
-labels = []
-c = 0
-linear = []
-print("0s")
-data_score = evaluate_model(model, data_loader)
-data = f"Final : F1 Score: {data_score[0]}, Accuracy: {data_score[1]}, Precision: {data_score[2]}, Recall: {data_score[3]}, ROC AUC: {data_score[4]} Average Loss: {data_score[5]}"
-print(data)
-test_score = evaluate_model(model, test_loader)
-test = f"Final : F1 Score: {test_score[0]}, Accuracy: {test_score[1]}, Precision: {test_score[2]}, Recall: {test_score[3]}, ROC AUC: {test_score[4]} Average Loss: {test_score[5]}"
-print(test)
+data_loader = DataLoader(dataset, batch_size=batch_size)
+test_loader = DataLoader(test_dataset, batch_size=batch_size)
+scores = []
+
+# load fine-tuned model
+# with(open("model_outputs/cpe-21/model.pt", 'rb')) as f:
+#     model.load_state_dict(torch.load(f))
+
+# model.eval()
+# apply the model to all the train data
+
+# batch = next(iter(data_loader))
+# output, attention = model(batch)
+# average_attention = torch.mean(attention[1], dim=0)  # Shape [197, 197]
+
+
+# attention_to_visualize = average_attention.detach().numpy()  # Or a specific row/column of it
+# plt.figure(figsize=(10, 8))
+# sns.heatmap(attention_to_visualize, cmap='viridis')
+# plt.title("Attention Heatmap")
+# plt.xlabel("Target Tokens/Patches")
+# plt.ylabel("Source Tokens/Patches")
+# plt.show()
+
+# print parameters
+# for name, param in model.named_parameters():
+#     if param.requires_grad:
+#         print(name, param.data.shape)
+
+print(sum(p.numel() for p in model.parameters()))
+
+counter = 0
+
+# for i in range(50,51):
+#     print(i)
+#     cv2.imshow("frame",dataset[i]["ped_frames"][0])
+#     cv2.waitKey(0)
+#     for frame in range(8):
+#         cv2.imshow("frame",dataset[i]["ped_frames"][frame])
+#         cv2.waitKey(0)
+
+# for batch in data_loader:
+#     if counter!=50:
+#         counter += 1
+#         continue
+#     output = model(batch)
+#     probs = torch.sigmoid(output).detach().cpu().numpy()
+    # print(probs)
+    # ped_frames = unload(batch["ped_frames"])
+    # context = unload(batch["context"])
+    # for frame in range(8):
+    #     cv2.imshow("frame",ped_frames[0][frame].numpy())
+    #     cv2.waitKey(0)
+    # if probs[0]<0.5:
+    #     print(counter)
+    #     ped_frames = unload(batch["ped_frames"])
+    #     context = unload(batch["context"])
+    #     for frame in range(8):
+    #         cv2.imshow("frame",ped_frames[0][frame].numpy())
+    #         cv2.waitKey(0)
+    #     break
+    # break
+
+
 
 

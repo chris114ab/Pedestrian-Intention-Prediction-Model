@@ -2,6 +2,8 @@ from sklearn import metrics
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import PrecisionRecallDisplay
 import re
 
 
@@ -17,6 +19,7 @@ def plot_roc_curve(y_true, y_scores):
     plt.ylabel('True Positive Rate')
     plt.title('Receiver Operating Characteristic (ROC) Curve')
     plt.legend(loc="lower right")
+    plt.grid()
     plt.show()
 
 def plot_confusion_matrix(y_true, y_scores, threshold=0.5):
@@ -53,25 +56,17 @@ def parse_float_arrays(input_str):
 # Function to parse boolean array from the input string
 def parse_bool_array(input_str):
     # Split the string by spaces and filter out empty strings
-    bool_strings = input_str.strip("[]").split()
+    bool_strings = input_str.strip("[]").split(",")
     # Convert strings to booleans
     bool_values = [val == "True" for val in bool_strings]
     return np.array(bool_values, dtype=bool)
 
-probs = """[array([0.9918942], dtype=float32), array([0.08325734], dtype=float32), array([0.9950269], dtype=float32), array([0.9994822], dtype=float32), array([0.9981982], dtype=float32), array([0.24327114], dtype=float32), array([0.6930465], dtype=float32), array([0.00149411], dtype=float32), array([0.99987984], dtype=float32), array([0.99998415], dtype=float32), array([0.8590882], dtype=float32), array([0.68448806], dtype=float32), array([0.9838215], dtype=float32), array([0.00018226], dtype=float32), array([0.99730814], dtype=float32), array([0.992109], dtype=float32), array([0.9512164], dtype=float32), array([0.2766029], dtype=float32), array([0.90248305], dtype=float32), array([0.99982315], dtype=float32), array([0.9535758], dtype=float32), array([0.99976224], dtype=float32), array([0.6335796], dtype=float32), array([0.99989176], dtype=float32), array([0.18754844], dtype=float32), array([0.78321415], dtype=float32), array([0.9935675], dtype=float32), array([0.99975103], dtype=float32), array([0.9998529], dtype=float32), array([0.9997819], dtype=float32), array([0.30513647], dtype=float32), array([0.9796306], dtype=float32), array([0.4659114], dtype=float32), array([0.882364], dtype=float32), array([0.978293], dtype=float32), array([0.00619808], dtype=float32), array([0.53233993], dtype=float32), array([0.92021465], dtype=float32), array([0.99995565], dtype=float32), array([0.99602306], dtype=float32), array([0.13293555], dtype=float32), array([0.96424305], dtype=float32), array([0.96573114], dtype=float32), array([0.00290183], dtype=float32), array([0.99998784], dtype=float32), array([0.01736439], dtype=float32), array([0.99965024], dtype=float32), array([0.9959539], dtype=float32), array([0.9549166], dtype=float32), array([0.99849343], dtype=float32), array([0.03708636], dtype=float32), array([0.05815809], dtype=float32), array([0.9993642], dtype=float32), array([0.9949686], dtype=float32), array([0.15851161], dtype=float32), array([0.9765633], dtype=float32), array([0.36534578], dtype=float32), array([0.1314324], dtype=float32), array([0.02295152], dtype=float32), array([0.99999976], dtype=float32), array([0.99999917], dtype=float32), array([0.00112242], dtype=float32), array([0.2602586], dtype=float32), array([0.91264385], dtype=float32), array([0.04270111], dtype=float32), array([0.99979895], dtype=float32), array([0.00416662], dtype=float32), array([0.9895661], dtype=float32), array([0.03576682], dtype=float32), array([0.83605325], dtype=float32), array([0.00602713], dtype=float32), array([0.99989283], dtype=float32), array([0.00197331], dtype=float32), array([0.9990169], dtype=float32), array([0.0198016], dtype=float32), array([0.9996495], dtype=float32), array([0.9887893], dtype=float32), array([0.25876045], dtype=float32), array([0.20957315], dtype=float32), array([0.89227], dtype=float32), array([0.9370489], dtype=float32), array([0.99999785], dtype=float32), array([0.15176333], dtype=float32), array([0.99570054], dtype=float32), array([0.3020015], dtype=float32), array([0.11906195], dtype=float32), array([0.35893187], dtype=float32), array([0.06001982], dtype=float32), array([0.9918276], dtype=float32), array([0.9924136], dtype=float32), array([0.01298828], dtype=float32), array([0.99335736], dtype=float32), array([0.02605197], dtype=float32), array([0.11622707], dtype=float32), array([0.21386094], dtype=float32), array([0.00090731], dtype=float32), array([0.04080795], dtype=float32), array([0.8315508], dtype=float32), array([0.9697999], dtype=float32), array([0.07665134], dtype=float32)]"""
-labels = """[ True False False False False  True  True False  True  True False False
- False False False  True False  True  True  True  True False  True  True
- False False False  True  True False  True False  True False False False
-  True False False False  True  True False False  True  True  True False
- False  True  True  True  True  True  True False False  True  True  True
-  True False  True  True False  True False False  True False  True  True
- False False False False False  True  True False False False  True False
- False  True  True  True  True False  True False False False  True False
- False  True  True  True]"""
+probs = """[0.00606004],[0.00018098],[0.00131563],[0.9999976],[0.99990904],[0.8549511],[0.00339116],[0.99999595],[0.00174061],[0.98383707],[0.00013353],[0.62133807],[0.00023084],[0.9999914],[0.00401813],[0.07695097],[0.99999],[0.99998283],[0.9973463],[0.99256694],[0.38537723],[0.9999993],[0.00014474],[0.09493618],[0.00314835],[0.00124601],[0.9999999],[0.99868304],[9.2155795e-05],[0.98979175],[0.00023696],[0.00367901],[0.00010987],[1.],[0.99987626],[1.],[0.99986994],[0.9757751],[0.32415453],[0.6237629],[0.8492267],[0.9999925],[0.9999716],[0.99973315],[0.9999975],[7.998535e-06],[0.99995685],[7.226613e-05],[2.0252715e-05],[0.1479386],[0.00026316],[0.9952596],[1.],[0.92483246],[0.22218643],[0.99989295],[0.9986922],[0.95739853],[7.188028e-05],[0.9999409],[0.00333943],[0.9781843],[7.5059084e-05],[0.00169778],[0.06857612],[0.0084323],[0.96316993],[0.11914834],[5.3254756e-05],[0.88678306],[5.6969653e-05],[0.9997588],[0.01116939],[9.448721e-05],[0.99999857],[0.9983308],[0.9975556],[0.999946],[0.9996871],[0.0006044]"""
+labels = """True,False,True,True,True,False,False,True,False,True,False,True,False,True,False,False,True,True,True,True,True,True,False,False,False,False,True,True,False,True,False,True,False,True,True,True,False,False,False,True,True,True,True,True,True,False,True,True,True,False,True,False,True,False,False,True,True,True,False,True,False,True,True,False,False,False,True,False,True,False,False,True,False,False,True,False,False,True,True,False"""
 # Parse the arrays
 float_array = parse_float_arrays(probs)
 bool_array = parse_bool_array(labels)
-
+print(len(float_array))
 labels = [1 if x else 0 for x in bool_array]
 print(labels)
 # print(probs)
@@ -80,5 +75,14 @@ print(labels)
 # print(probs)
 # print(labels)
 
-plot_roc_curve(np.array(labels), np.array(float_array))
+
+# plot_roc_curve(np.array(labels), np.array(float_array))
+
 # plot_confusion_matrix(np.array(labels), np.array(float_array))
+
+
+precision, recall, _ = precision_recall_curve(np.array(labels), np.array(float_array))
+disp = PrecisionRecallDisplay(precision=precision, recall=recall)
+disp.plot()
+plt.grid()
+plt.show()

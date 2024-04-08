@@ -1,19 +1,19 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: cpe-model
+  name: early-cpe-23
   namespace: msc24chrisproject
 spec:
   backoffLimit: 0
   template:        
     metadata:
-      name: cpe-model
+      name: early-cpe-23
     spec:
       containers:
       - name: training-container  
-        image: chris114abraham/masters:combine
+        image: chris114abraham/masters:classifier
         imagePullPolicy: Always
-        command: ["python", "combined_model.py", "con-ped-ext","10","20","0.0005","cpe_model_final","0.3"]
+        command: ["python", "classifier_fit.py", "con","0.0005","p-22"]
         resources:
           requests:
             cpu: "5000m" 

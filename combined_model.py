@@ -10,6 +10,7 @@ import torch.nn as nn
 import numpy as np
 import pickle
 from PIL import Image
+import copy
 
 def evaluate_model(model, threshold, data_loader):
     model.eval()
@@ -31,7 +32,6 @@ def evaluate_model(model, threshold, data_loader):
     precision = precision_score(true_labels, pred_labels)
     recall = recall_score(true_labels, pred_labels)
     roc_auc = roc_auc_score(true_labels, pred_probs)
-    
     return f1, accuracy, precision, recall, roc_auc, loss, pred_probs, true_labels
 
 def unload(input):
@@ -98,7 +98,7 @@ class Identity(nn.Module):
         return x
 
 class CombinedTimesformer(nn.Module):
-    def __init__(self, context, ped_frames, extra):
+    def __init__(self, context, ped_frames, extra, dropout_rate=0.5):
         super(CombinedTimesformer, self).__init__()
         model_name = "facebook/timesformer-base-finetuned-k400"
         self.processor = AutoImageProcessor.from_pretrained(model_name)
@@ -115,6 +115,7 @@ class CombinedTimesformer(nn.Module):
             feature_count += 200
             self.extra_model = torch.nn.Linear(440, 200)
         
+        self.dropout = nn.Dropout(dropout_rate)  # Add dropout layer
         self.feature_count = feature_count
 
         self.classifier =torch.nn.Linear(feature_count, 1)
@@ -136,6 +137,7 @@ class CombinedTimesformer(nn.Module):
 
 
         combined_feature_vector = torch.cat(feature_vector, dim=1)
+        combined_feature_vector = self.dropout(combined_feature_vector)
         output = self.classifier(combined_feature_vector)
         return output
     
@@ -151,21 +153,31 @@ if "ext" in sys.argv[1]:
 num_epochs = int(sys.argv[2])
 batch_size = int(sys.argv[3])
 learning_rate = float(sys.argv[4])
-model = CombinedTimesformer(context, ped_frames, extra)
+dropout_rate = float(sys.argv[5])
+output_path = "/nfs/" + sys.argv[6]
+data = str(sys.argv[7])
+# if len(sys.argv)==7:
+#     dropout_rate = float(sys.argv[6])
+
+model = CombinedTimesformer(context, ped_frames, extra, dropout_rate=dropout_rate)
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 scheduler = StepLR(optimizer, step_size=5, gamma=0.5)
 
-data_path = "/nfs/data.pickle"
-test_data_path = "/nfs/unseen_data.pickle"
+
+data_path = "/nfs/"+ data+"s_data.pickle"
+test_data_path = "/nfs/"+ data+"s_test.pickle"
 dataset = PIE_dataset(data_path)
 test_dataset = PIE_dataset(test_data_path)
+_, val_set = torch.utils.data.random_split(test_dataset, [len(test_dataset)-20, 20])
 data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
+val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 threshold = 0.5
-output_path = "/nfs/" + sys.argv[5]
 scores = []
+best_valscore = 0
+best_model = None
 
+print(f"Current Learning Rate: {scheduler.get_last_lr()}")  
 for epoch in range(num_epochs):
     model.train()
     true_labels = []
@@ -174,7 +186,6 @@ for epoch in range(num_epochs):
     for batch in data_loader:
         optimizer.zero_grad()
         output = model(batch)
-        print(output.shape, batch["label"].float().shape)
         loss = nn.BCEWithLogitsLoss()(output, batch["label"].float().unsqueeze(1))
         loss.backward()
         losses.append(loss.item())
@@ -182,25 +193,25 @@ for epoch in range(num_epochs):
         true_labels.extend(batch["label"].detach().numpy())
         optimizer.step()
 
-    f1 = f1_score(true_labels, pred_probs)
     acc_score = accuracy_score(true_labels, pred_probs)
-    precision = precision_score(true_labels, pred_probs)
-    recall = recall_score(true_labels, pred_probs)
-    roc_auc = roc_auc_score(true_labels, pred_probs)
     avg_loss = np.mean(losses)
-    print(f"Current Learning Rate: {scheduler.get_last_lr()}")
-    print(losses)
-    print(f"Epoch {epoch+1}: Training F1 Score: {f1}, Training Loss: {avg_loss}, Accuracy: {acc_score}, Precision: {precision}, Recall: {recall}, ROC AUC: {roc_auc}")
-    scores.append({"epoch":epoch,"f1": f1, "loss": avg_loss, "accuracy": acc_score, "precision": precision, "recall": recall, "roc_auc": roc_auc})
+    eval_score = evaluate_model(model, threshold, val_loader)
+    
+    if eval_score[1] > best_valscore:
+        print("best model yet")
+        best_valscore = eval_score[1]
+        best_model = copy.deepcopy(model)
+
+    print(f"training loss:{avg_loss} accuracy: {acc_score}")
+    print(f"validation loss:{eval_score[5]} accuracy: {eval_score[1]}")
+    scores.append(eval_score[:5])
     scheduler.step()
 
-
-
-test_score = evaluate_model(model, threshold, test_loader)
+test_score = evaluate_model(best_model, threshold, test_loader)
 test = f"Final : F1 Score: {test_score[0]}, Accuracy: {test_score[1]}, Precision: {test_score[2]}, Recall: {test_score[3]}, ROC AUC: {test_score[4]} Average Loss: {test_score[5]}"
 print(test)
-probs = ",".join(test_score[6])
-true = ",".join(test_score[7])
+probs = ",".join([str(x) for x in test_score[6]])
+true = ",".join([str(x) for x in test_score[7]])
 print(probs)
 print(true)
 

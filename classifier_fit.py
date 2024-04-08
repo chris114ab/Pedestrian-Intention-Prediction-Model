@@ -14,15 +14,14 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn import svm
 
 
-def evaluate_model(model, data_loader):
-    threshold = 0.5
+def evaluate_model_linear(model, threshold, data_loader):
     model.eval()
     true_labels = []
     pred_probs = []
     loss = []
     with torch.no_grad():
         for batch in data_loader:
-            output = model(batch)
+            _,output = model(batch)
             loss.append(nn.BCEWithLogitsLoss()(output, batch["label"].float().unsqueeze(1)))
             pred_probs.extend(torch.sigmoid(output).detach().cpu().numpy())
             true_labels.extend(batch["label"].detach().numpy())
@@ -36,6 +35,27 @@ def evaluate_model(model, data_loader):
     recall = recall_score(true_labels, pred_labels)
     roc_auc = roc_auc_score(true_labels, pred_probs)
     return f1, accuracy, precision, recall, roc_auc, loss, pred_probs, true_labels
+
+
+
+def evaluate_model(model, data_loader,classifier):
+    model.eval()
+    true_labels = []
+    pred_labels = []
+    c=0
+    with torch.no_grad():
+        for batch in data_loader:
+            features,_ = model(batch)
+            output = classifier.predict(features)
+            pred_labels.extend(output)
+            true_labels.extend(batch["label"].detach().numpy())
+
+    true_labels = np.array(true_labels)
+    f1 = f1_score(true_labels, pred_labels)
+    accuracy = accuracy_score(true_labels, pred_labels)
+    precision = precision_score(true_labels, pred_labels)
+    recall = recall_score(true_labels, pred_labels)
+    return f1, accuracy, precision, recall, pred_labels, true_labels
 
 def unload(input):
   length = len(input[0])
@@ -142,52 +162,68 @@ class CombinedTimesformer(nn.Module):
         combined_feature_vector = torch.cat(feature_vector, dim=1)
         combined_feature_vector = self.dropout(combined_feature_vector)
         output = self.classifier(combined_feature_vector)
-        return output
+        return combined_feature_vector, output
 
-context, ped_frames, extra = True, True, True
+context, ped_frames, extra = False, False, False
+if "con" in sys.argv[1]:
+    context = True
+if "ped" in sys.argv[1]:
+    ped_frames = True
+if "ext" in sys.argv[1]:
+    extra = True
+
 batch_size = 10
-model = CombinedTimesformer(context, ped_frames, extra)
-with(open("/nfs/cpe-21/model.pt", 'rb')) as f:
-    model.load_state_dict(torch.load(f))
+dropout_rate=float(sys.argv[2])
+path = "/nfs/" + sys.argv[3]
 
-paths= ["0.5","1","2"]
-for tte in paths:
-    data_path = "/nfs/"+ tte+"s_data.pickle"
-    test_data_path = "/nfs/"+ tte+"s_test.pickle"
-    dataset = PIE_dataset(data_path)
-    test_dataset = PIE_dataset(test_data_path)
-    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-    predictions = []
-    labels = []
-    c = 0
-    linear = []
-    print(tte)
-    data_score = evaluate_model(model, data_loader)
-    data = f"Final : F1 Score: {data_score[0]}, Accuracy: {data_score[1]}, Precision: {data_score[2]}, Recall: {data_score[3]}, ROC AUC: {data_score[4]} Average Loss: {data_score[5]}"
-    print(data)
-    print(data_score[6])
-    print(data_score[7])
-    test_score = evaluate_model(model, test_loader)
-    test = f"Final : F1 Score: {test_score[0]}, Accuracy: {test_score[1]}, Precision: {test_score[2]}, Recall: {test_score[3]}, ROC AUC: {test_score[4]} Average Loss: {test_score[5]}"
-    print(test)
+model = CombinedTimesformer(context, ped_frames, extra, dropout_rate=dropout_rate)
 
 data_path = "/nfs/data.pickle"
 test_data_path = "/nfs/unseen_data.pickle"
 dataset = PIE_dataset(data_path)
 test_dataset = PIE_dataset(test_data_path)
+test_set, val_set = torch.utils.data.random_split(test_dataset, [len(test_dataset)-20, 20])
 data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-predictions = []
+val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True)
+scores = []
+
+# load fine-tuned model
+with(open(path+"/model.pt", 'rb')) as f:
+    model.load_state_dict(torch.load(f))
+
+# apply the model to all the train data
+features = []
 labels = []
 c = 0
 linear = []
-print("0s")
-data_score = evaluate_model(model, data_loader)
-data = f"Final : F1 Score: {data_score[0]}, Accuracy: {data_score[1]}, Precision: {data_score[2]}, Recall: {data_score[3]}, ROC AUC: {data_score[4]} Average Loss: {data_score[5]}"
-print(data)
-test_score = evaluate_model(model, test_loader)
-test = f"Final : F1 Score: {test_score[0]}, Accuracy: {test_score[1]}, Precision: {test_score[2]}, Recall: {test_score[3]}, ROC AUC: {test_score[4]} Average Loss: {test_score[5]}"
-print(test)
+for batch in data_loader:
+    feature, _ = model(batch)
+    features.extend(feature.detach().numpy())
+    labels.extend(batch["label"])
 
+# fit the classifier on the output of the model
+
+rf = RandomForestClassifier(n_estimators=768)
+rf.fit(features, labels)
+# evaluate the classifier on the test data
+scores = evaluate_model(model,test_loader, rf)
+test = f"RF : F1 Score: {scores[0]}, Accuracy: {scores[1]}, Precision: {scores[2]}, Recall: {scores[3]}"
+print(test)
+print(scores[4])
+print(scores[5])
+
+svm_cls = svm.SVC()
+svm_cls.fit(features, labels)
+scores = evaluate_model(model,test_loader, rf)
+test = f"SVM : F1 Score: {scores[0]}, Accuracy: {scores[1]}, Precision: {scores[2]}, Recall: {scores[3]}"
+print(test)
+print(scores[4])
+print(scores[5])
+
+scores = evaluate_model_linear(model,0.5,test_loader)
+test = f"Linear : F1 Score: {scores[0]}, Accuracy: {scores[1]}, Precision: {scores[2]}, Recall: {scores[3]}"
+print(test)
+print(scores[6])
+print(scores[7])
 

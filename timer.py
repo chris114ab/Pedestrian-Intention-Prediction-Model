@@ -12,17 +12,16 @@ import pickle
 from PIL import Image
 from sklearn.ensemble import RandomForestClassifier
 from sklearn import svm
+import time
 
-
-def evaluate_model(model, data_loader):
-    threshold = 0.5
+def evaluate_model_linear(model, threshold, data_loader):
     model.eval()
     true_labels = []
     pred_probs = []
     loss = []
     with torch.no_grad():
         for batch in data_loader:
-            output = model(batch)
+            _,output = model(batch)
             loss.append(nn.BCEWithLogitsLoss()(output, batch["label"].float().unsqueeze(1)))
             pred_probs.extend(torch.sigmoid(output).detach().cpu().numpy())
             true_labels.extend(batch["label"].detach().numpy())
@@ -36,6 +35,27 @@ def evaluate_model(model, data_loader):
     recall = recall_score(true_labels, pred_labels)
     roc_auc = roc_auc_score(true_labels, pred_probs)
     return f1, accuracy, precision, recall, roc_auc, loss, pred_probs, true_labels
+
+
+
+def evaluate_model(model, data_loader,classifier):
+    model.eval()
+    true_labels = []
+    pred_labels = []
+    c=0
+    with torch.no_grad():
+        for batch in data_loader:
+            features,_ = model(batch)
+            output = classifier.predict(features)
+            pred_labels.extend(output)
+            true_labels.extend(batch["label"].detach().numpy())
+
+    true_labels = np.array(true_labels)
+    f1 = f1_score(true_labels, pred_labels)
+    accuracy = accuracy_score(true_labels, pred_labels)
+    precision = precision_score(true_labels, pred_labels)
+    recall = recall_score(true_labels, pred_labels)
+    return f1, accuracy, precision, recall, pred_labels, true_labels
 
 def unload(input):
   length = len(input[0])
@@ -77,10 +97,9 @@ def custom_transforms(data):
 
 
 class PIE_dataset(Dataset):
-    def __init__(self, data_path, transform=None):
+    def __init__(self, data_path ,transform=None):
         with open(data_path, 'rb') as f:
             self.data = pickle.load(f)
-        self.data = self.data
         self.transform =  transforms.RandomApply([custom_transforms], p=0.5)
 
     def __len__(self):
@@ -142,52 +161,78 @@ class CombinedTimesformer(nn.Module):
         combined_feature_vector = torch.cat(feature_vector, dim=1)
         combined_feature_vector = self.dropout(combined_feature_vector)
         output = self.classifier(combined_feature_vector)
-        return output
+        return combined_feature_vector, output
 
-context, ped_frames, extra = True, True, True
-batch_size = 10
-model = CombinedTimesformer(context, ped_frames, extra)
-with(open("/nfs/cpe-21/model.pt", 'rb')) as f:
-    model.load_state_dict(torch.load(f))
 
-paths= ["0.5","1","2"]
-for tte in paths:
-    data_path = "/nfs/"+ tte+"s_data.pickle"
-    test_data_path = "/nfs/"+ tte+"s_test.pickle"
-    dataset = PIE_dataset(data_path)
-    test_dataset = PIE_dataset(test_data_path)
-    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-    predictions = []
-    labels = []
-    c = 0
-    linear = []
-    print(tte)
-    data_score = evaluate_model(model, data_loader)
-    data = f"Final : F1 Score: {data_score[0]}, Accuracy: {data_score[1]}, Precision: {data_score[2]}, Recall: {data_score[3]}, ROC AUC: {data_score[4]} Average Loss: {data_score[5]}"
-    print(data)
-    print(data_score[6])
-    print(data_score[7])
-    test_score = evaluate_model(model, test_loader)
-    test = f"Final : F1 Score: {test_score[0]}, Accuracy: {test_score[1]}, Precision: {test_score[2]}, Recall: {test_score[3]}, ROC AUC: {test_score[4]} Average Loss: {test_score[5]}"
-    print(test)
+batch_size = 1
+dropout_rate=0.3
 
-data_path = "/nfs/data.pickle"
-test_data_path = "/nfs/unseen_data.pickle"
+
+data_path = "/nfs/unseen_data.pickle"
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(device)
 dataset = PIE_dataset(data_path)
-test_dataset = PIE_dataset(test_data_path)
 data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-predictions = []
-labels = []
-c = 0
-linear = []
-print("0s")
-data_score = evaluate_model(model, data_loader)
-data = f"Final : F1 Score: {data_score[0]}, Accuracy: {data_score[1]}, Precision: {data_score[2]}, Recall: {data_score[3]}, ROC AUC: {data_score[4]} Average Loss: {data_score[5]}"
-print(data)
-test_score = evaluate_model(model, test_loader)
-test = f"Final : F1 Score: {test_score[0]}, Accuracy: {test_score[1]}, Precision: {test_score[2]}, Recall: {test_score[3]}, ROC AUC: {test_score[4]} Average Loss: {test_score[5]}"
-print(test)
+
+model = CombinedTimesformer(True, True, True, dropout_rate=dropout_rate)
+# load fine-tuned model
+# with(open("/nfs/cpe-21/model.pt", 'rb')) as f:
+#     model.load_state_dict(torch.load(f))
+
+model.eval()
+model.to(device)
+
+data = next(iter(data_loader))
+
+for key in data.keys():
+    if isinstance(data[key], torch.Tensor):
+        data[key] = data[key].to(device)
+start_time = time.time()
+outputs = model(data)
+end_time = time.time()
+print(f"Time taken for one batch CPE: {end_time-start_time}")
+
+model2 = CombinedTimesformer(True, True, False, dropout_rate=dropout_rate)
+model2.eval()
+model2.to(device)
+start_time = time.time()
+outputs = model2(data)
+end_time = time.time()
+print(f"Time taken for one batch CP: {end_time-start_time}")
+
+
+model3 = CombinedTimesformer(True, False, False, dropout_rate=dropout_rate)
+model3.eval()
+model3.to(device)
+start_time = time.time()
+outputs = model3(data)
+end_time = time.time()
+print(f"Time taken for one batch C: {end_time-start_time}")
+
+model4 = CombinedTimesformer(True, False, True, dropout_rate=dropout_rate)
+model4.eval()
+model4.to(device)
+start_time = time.time()
+outputs = model4(data)
+end_time = time.time()
+print(f"Time taken for one batch CE: {end_time-start_time}")
+
+model5 = CombinedTimesformer(False, True, True, dropout_rate=dropout_rate)
+model5.eval()
+model5.to(device)
+start_time = time.time()
+outputs = model5(data)
+end_time = time.time()
+print(f"Time taken for one batch PE: {end_time-start_time}")
+
+model6 = CombinedTimesformer(False, True, False, dropout_rate=dropout_rate)
+model6.eval()
+model6.to(device)
+start_time = time.time()
+outputs = model6(data)
+end_time = time.time()
+print(f"Time taken for one batch P: {end_time-start_time}")
+
+
 
 
