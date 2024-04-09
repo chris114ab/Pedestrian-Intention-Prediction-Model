@@ -16,7 +16,7 @@
 import math
 from typing import List
 
-from data import Person
+from dataset.data import Person
 from tracker.tracker import Track
 from tracker.tracker import Tracker
 

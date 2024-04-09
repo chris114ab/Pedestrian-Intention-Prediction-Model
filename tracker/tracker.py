@@ -16,7 +16,7 @@
 import abc
 from typing import List, NamedTuple
 
-from data import Person
+from dataset.data import Person
 from tracker.config import TrackerConfig
 
 

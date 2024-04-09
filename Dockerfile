@@ -4,9 +4,10 @@ FROM tensorflow/tensorflow:2.15.0
 # to a location inside the image
 
 # Update package lists and install libgl1-mesa-glx
-COPY eval_model.py /tmp
-COPY timer.py /tmp
-COPY data.py /tmp
+COPY testEvalScripts/eval_model.py /tmp
+COPY testEvalScripts/timer.py /tmp
+COPY dataset/data.py /tmp
+COPY proposed_model.py /tmp
 
 # COPY data /tmp/data
 

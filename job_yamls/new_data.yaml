@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cpe0.5-29-2
+  namespace: msc24chrisproject
+spec:
+  backoffLimit: 0
+  template:        
+    metadata:
+      name: cpe0.5-29-2
+    spec:
+      containers:
+      - name: training-container  
+        image: chris114abraham/masters:checkpoint
+        imagePullPolicy: Always
+        command: ["python", "combined_model.py", "con-ped-ext","1","20","0.0001","0.3","cpe0.5-29-2","0.5"]
+        resources:
+          requests:
+            cpu: "5000m" 
+            memory: "10Gi"
+          limits:
+            cpu: "10000m" 
+            memory: "100Gi"
+        volumeMounts:
+        - mountPath: /nfs
+          name: nfs-access
+        env:
+        - name: TRANSFORMERS_CACHE
+          value: "/nfs"
+      volumes:
+      - name: nfs-access
+        persistentVolumeClaim: 
+          claimName: msc24chrisvol1claim 
+      restartPolicy: Never

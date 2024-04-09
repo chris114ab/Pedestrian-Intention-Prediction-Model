@@ -15,9 +15,9 @@
 
 import unittest
 
-from data import Person
-from data import Point
-from data import Rectangle
+from dataset.data import Person
+from dataset.data import Point
+from dataset.data import Rectangle
 from tracker.bounding_box_tracker import BoundingBoxTracker
 from tracker.config import KeypointTrackerConfig
 from tracker.config import TrackerConfig

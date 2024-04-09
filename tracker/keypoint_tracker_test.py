@@ -16,11 +16,11 @@
 import math
 import unittest
 
-from data import BodyPart
-from data import KeyPoint
-from data import Person
-from data import Point
-from data import Rectangle
+from dataset.data import BodyPart
+from dataset.data import KeyPoint
+from dataset.data import Person
+from dataset.data import Point
+from dataset.data import Rectangle
 from tracker.config import KeypointTrackerConfig
 from tracker.config import TrackerConfig
 from tracker.keypoint_tracker import KeypointTracker
